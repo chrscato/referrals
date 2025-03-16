@@ -8,6 +8,9 @@ from pathlib import Path
 import logging
 from extract import extract_text, initialize_documentai
 import config
+from mapping import add_mapping_to_results
+# Import the updated provider_mapping function that only takes one argument
+from provider_mapping_simple import add_provider_mapping_to_results
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -162,6 +165,9 @@ def save_results(order_id, processed_data, api_request, llm_response):
         processed_data: Processed order data
         api_request: LLM API request
         llm_response: LLM API response
+        
+    Returns:
+        Results dictionary
     """
     # Create a clean version of processed_data with shorter content for readability
     clean_data = {
@@ -204,6 +210,14 @@ def save_results(order_id, processed_data, api_request, llm_response):
         "raw_llm_response": llm_response
     }
     
+    # Add mapping data if geocoding is enabled
+    if config.ENABLE_GEOCODING:
+        results = add_mapping_to_results(results)
+        
+        # Add provider mapping if geocoding succeeded
+        # Call the simplified version that only takes one argument
+        results = add_provider_mapping_to_results(results)
+    
     output_path = config.OUTPUT_DIR / f"{order_id}_results.json"
     
     # Ensure output directory exists
@@ -213,3 +227,5 @@ def save_results(order_id, processed_data, api_request, llm_response):
         json.dump(results, f, indent=2, default=str)
     
     logger.info(f"Results saved to {output_path}")
+    
+    return results
