@@ -53,11 +53,12 @@ You are an intelligent workers compensation intake processor. Your task is to ex
 Focus on identifying and extracting ONLY these critical pieces of information:
 1. Patient/Claimant Name (note: sometimes referred to as "claimant" or just "patient")
 2. Patient Address (full address if available)
-3. Order Request (the specific service or treatment being requested)
-4. Location Request (any special instructions around where to schedule the service, specific provider or location)
-5. Referring Provider (the original provider who requested the service, ideally name and NPI)
-6. The Adjustor's name and contact information (typically a part of the email signature)
-7. Additional Considerations (any special instructions, medical history, or important details relevant to the order)
+3. Order Request (the specific service or treatment being requested, including body part, with or without contrast, etc.)
+4. CPT Code(s) (identify the appropriate CPT code for the ordered service, or indicate if none is explicitly mentioned)
+5. Location Request (any special instructions around where to schedule the service, specific provider or location)
+6. Referring Provider (the original provider who requested the service, ideally name and NPI)
+7. The Adjustor's name and contact information (typically a part of the email signature)
+8. Additional Considerations (any special instructions, medical history, or important details relevant to the order)
 
 IMPORTANT INSTRUCTIONS:
 - Different parts of the information may appear in different documents (email body, attachments, etc.)
