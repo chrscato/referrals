@@ -6,8 +6,9 @@ import requests
 import time
 import json
 import os
+import re
 from pathlib import Path
-import config
+from referrals import config
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -36,7 +37,7 @@ def preprocess_address(address):
         "Fla": "FL",
         "Flor": "FL",
         "Flo": "FL",
-        "Flordia": "FL",
+        "Flaordia": "FL",
         "Fla.": "FL",
         "Cali": "CA",
         "Cal": "CA",
@@ -85,6 +86,98 @@ def preprocess_address(address):
     
     return processed_address.strip()
 
+def geocode_zipcode(zipcode):
+    """
+    Special handling for US zip codes using a more reliable geocoding service.
+    
+    Args:
+        zipcode: US zip code (5 digits)
+        
+    Returns:
+        Dictionary with latitude, longitude, and address details or None if geocoding fails
+    """
+    # Validate zip code format
+    if not re.match(r'^\d{5}$', zipcode):
+        logger.warning(f"Invalid zip code format: {zipcode}")
+        return None
+        
+    # Generate a cache key from the zip code
+    cache_key = f"zip_{zipcode}"
+    cache_file = GEOCODE_CACHE_DIR / f"{cache_key}.json"
+    
+    # Check if we have a cached result
+    if cache_file.exists():
+        try:
+            with open(cache_file, 'r') as f:
+                logger.info(f"Using cached zip code result for: {zipcode}")
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error reading zip code cache: {str(e)}")
+    
+    try:
+        # Use a more reliable US-specific geocoding service
+        url = f"https://api.zippopotam.us/us/{zipcode}"
+        response = requests.get(url)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        if not data.get('places'):
+            logger.warning(f"No location found for zip code: {zipcode}")
+            return None
+            
+        # Get the first place (usually the main city for the zip code)
+        place = data['places'][0]
+        
+        # Now use Nominatim to get precise coordinates
+        nominatim_url = "https://nominatim.openstreetmap.org/search"
+        params = {
+            "q": f"{place['place name']}, {place['state']}, {zipcode}, USA",
+            "format": "json",
+            "limit": 1,
+            "addressdetails": 1
+        }
+        
+        headers = {
+            "User-Agent": "WorkersCompProcessor/1.0",
+            "Accept": "application/json"
+        }
+        
+        time.sleep(1)  # Respect rate limits
+        response = requests.get(nominatim_url, params=params, headers=headers)
+        response.raise_for_status()
+        
+        results = response.json()
+        if not results:
+            logger.warning(f"No coordinates found for zip code: {zipcode}")
+            return None
+            
+        result = results[0]
+        
+        geocoded_data = {
+            "latitude": float(result["lat"]),
+            "longitude": float(result["lon"]),
+            "display_name": result["display_name"],
+            "address_components": {
+                "city": place['place name'],
+                "state": place['state'],
+                "postcode": zipcode,
+                "country": "USA"
+            },
+            "original_address": zipcode
+        }
+        
+        # Cache the result
+        with open(cache_file, 'w') as f:
+            json.dump(geocoded_data, f, indent=2)
+            
+        logger.info(f"Successfully geocoded zip code: {zipcode}")
+        return geocoded_data
+        
+    except Exception as e:
+        logger.error(f"Error geocoding zip code: {str(e)}")
+        return None
+
 def geocode_address(address, api_key=None):
     """
     Convert an address to geographic coordinates using OpenStreetMap Nominatim API.
@@ -99,6 +192,10 @@ def geocode_address(address, api_key=None):
     if not address:
         logger.warning("No address provided for geocoding")
         return None
+        
+    # Check if the input is just a zip code
+    if re.match(r'^\d{5}$', address.strip()):
+        return geocode_zipcode(address.strip())
         
     original_address = address
         

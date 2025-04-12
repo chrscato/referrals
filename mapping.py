@@ -1,5 +1,6 @@
 """
 Functions for creating maps based on geocoded addresses.
+Updated to work with enhanced HCFA-like data format.
 """
 import logging
 import requests
@@ -151,7 +152,9 @@ def add_mapping_to_results(results, api_key=None):
         order_id = results.get("order_id")
         
         extracted_data = results.get("extracted_data", {})
-        patient_address_data = extracted_data.get("patient_address", {})
+        # Use the normalized structure
+        patient_info = extracted_data.get("patient_info", {})
+        patient_address_data = patient_info.get("patient_address", {})
         patient_address = patient_address_data.get("value") if isinstance(patient_address_data, dict) else None
         
         if not patient_address:

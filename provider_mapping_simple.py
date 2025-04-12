@@ -1,5 +1,6 @@
 """
 Simplified module for mapping patient addresses to nearby providers based purely on distance.
+Updated to support multiple procedures and CPT codes.
 """
 import logging
 import sqlite3
@@ -231,19 +232,35 @@ def add_provider_mapping_to_results(results):
         latitude = geocode_data.get("latitude")
         longitude = geocode_data.get("longitude")
         
-        # Find nearest providers
-        providers = find_nearest_providers(latitude, longitude)
+        # Check if we have procedures
+        extracted_data = results.get("extracted_data", {})
+        procedures = extracted_data.get("procedures", [])
         
-        # Prepare provider mapping
         provider_mapping = {
-            "status": "success" if providers else "no_providers_found",
+            "status": "success",
             "patient_location": {
                 "latitude": latitude,
                 "longitude": longitude,
                 "address": geocode_data.get("display_name")
             },
-            "providers": providers
+            "procedures": []
         }
+        
+        # For each procedure, find nearby providers
+        for procedure in procedures:
+            cpt_code = None
+            cpt_code_data = procedure.get("cpt_code", {})
+            if isinstance(cpt_code_data, dict) and cpt_code_data.get("value"):
+                cpt_code = cpt_code_data.get("value")
+            
+            providers = find_nearest_providers(latitude, longitude, proc_code=cpt_code)
+            
+            procedure_mapping = {
+                "cpt_code": cpt_code,
+                "providers": providers
+            }
+            
+            provider_mapping["procedures"].append(procedure_mapping)
         
         # Add to results
         results["provider_mapping"] = provider_mapping

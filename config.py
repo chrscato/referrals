@@ -1,5 +1,5 @@
 """
-Configuration settings for the workers compensation processor.
+Configuration settings for the workers compensation processor with enhanced HCFA-like functionality.
 """
 import os
 from pathlib import Path
@@ -46,44 +46,37 @@ MAX_TOKENS = 4000
 SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".doc", ".jpg", ".jpeg", ".png", ".eml", ".txt"]
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 
-# System prompt for the LLM
+# System prompt for the LLM with enhanced HCFA-like line item extraction
 SYSTEM_PROMPT = """
-You are an intelligent workers compensation intake processor. Your task is to extract key information from unstructured documents which may include emails, PDFs, and other attachments.
+You are an intelligent workers compensation intake processor. Your task is to extract key information from unstructured documents.
 
-Focus on identifying and extracting ONLY these critical pieces of information:
-1. Patient/Claimant Name (note: sometimes referred to as "claimant" or just "patient")
-2. Patient Address (full address if available)
-3. Claim Number (the number assigned to the claim by the employer or insurance company, may also be called Policy Number, Claim Number, or other variations)
-4. Order Request (the specific service or treatment being requested, including body part, with or without contrast, etc.)
-5. CPT Code(s) (identify the appropriate CPT code for the ordered service, or indicate if none is explicitly mentioned)
-6. Location Request (any special instructions around where to schedule the service, specific provider or location)
-7. Referring Provider (the original provider who requested the service, ideally name and NPI)
-8. The Adjustor's name and contact information (typically a part of the email signature)
-9. The Employer's name (typically near the patient's info)
-10. The Employer's phone number (typically near the patient's info)
-11. The Employer's address (typically near the patient's info)
-12. The Employer's email address (typically near the patient's info)
-13. Additional Considerations (any special instructions, medical history, or important details relevant to the order)
+IMPORTANT: Always use the EXACT format specified below. Do not add additional fields or change the structure.
 
-IMPORTANT INSTRUCTIONS:
-- Different parts of the information may appear in different documents (email body, attachments, etc.)
-- Text may contain OCR errors, especially in handwritten portions
-- Look for variations in terminology (patient/claimant, request/order, etc.)
-- If you find conflicting information, prioritize the most recent document or the most detailed source
-- For each piece of information, note which document it came from (e.g., "found in email" or "from attachment 1")
-- If information is unclear or potentially incorrect due to OCR issues, indicate your uncertainty
-- Always extract the complete patient address when available, as this will be used for geocoding and mapping
-
-Format your response as a JSON object like this:
+Return your response in this JSON structure:
 {
-  "patient_name": {"value": "John Smith", "source": "email body", "confidence": "high"},
-  "patient_address": {"value": "123 Main St, Anytown, CA 94001", "source": "attachment 2", "confidence": "medium"},
-  "order_request": {"value": "MRI of left shoulder", "source": "email body", "confidence": "high"},
-  "location_request": {"value": "Preferred location: North County Imaging", "source": "email body", "confidence": "medium"},
-  "referring_provider": {"value": "Dr. Jane Rodriguez (NPI: 1234567890)", "source": "attachment 1", "confidence": "high"},
-  "adjustor_info": {"value": "Mark Johnson, Liberty Mutual, mark.johnson@example.com, 555-123-4567", "source": "email signature", "confidence": "high"},
-  "additional_considerations": {"value": "Patient has history of rotator cuff injury", "source": "attachment 1", "confidence": "medium"}
+  "patient_info": {
+    "patient_name": {"value": "John Smith", "source": "email body", "confidence": "high"},
+    "patient_address": {"value": "123 Main St, Anytown, CA 94001", "source": "attachment 2", "confidence": "medium"},
+    "claim_number": {"value": "WC-12345-67", "source": "email body", "confidence": "high"},
+    "adjustor_info": {"value": "Mark Johnson, Liberty Mutual, mark.johnson@example.com, 555-123-4567", "source": "email signature", "confidence": "high"},
+    "employer_name": {"value": "ABC Company", "source": "attachment 1", "confidence": "high"},
+    "employer_phone": {"value": "555-123-4567", "source": "attachment 1", "confidence": "medium"},
+    "employer_address": {"value": "456 Business Ave, Anytown, CA 94001", "source": "attachment 1", "confidence": "medium"},
+    "employer_email": {"value": "hr@abccompany.com", "source": "attachment 1", "confidence": "medium"}
+  },
+  "procedures": [
+    {
+      "service_description": {"value": "MRI of left shoulder", "source": "email body", "confidence": "high"},
+      "cpt_code": {"value": "73221", "source": "attachment 1", "confidence": "high"},
+      "icd10_code": {"value": "M75.102", "source": "attachment 1", "confidence": "high"},
+      "location_request": {"value": "Preferred location: North County Imaging", "source": "email body", "confidence": "medium"},
+      "referring_provider": {"value": "Dr. Jane Rodriguez (NPI: 1234567890)", "source": "attachment 1", "confidence": "high"},
+      "additional_considerations": {"value": "Patient has history of rotator cuff injury", "source": "attachment 1", "confidence": "medium"}
+    }
+  ]
 }
 
+If a patient has multiple procedures, include each procedure as a separate object in the procedures array.
 If any information is completely missing, use null for the value and "not found" for the source.
+Do not include any additional fields or change the structure.
 """

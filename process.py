@@ -1,5 +1,5 @@
 """
-Process order folders and prepare data for LLM.
+Process order folders and prepare data for LLM with enhanced HCFA-like functionality.
 """
 import os
 import json
@@ -11,6 +11,7 @@ import config
 from mapping import add_mapping_to_results
 # Import the updated provider_mapping function that only takes one argument
 from provider_mapping_simple import add_provider_mapping_to_results
+from email_converter import convert_email_to_pdf
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -63,6 +64,16 @@ def process_order_folder(order_folder):
         
         file_count += 1
         logger.info(f"Processing file {file_count}: {file_path.name}")
+        
+        # Convert email files to PDF before processing
+        if file_path.suffix.lower() == '.eml':
+            try:
+                logger.info(f"Converting email to PDF: {file_path.name}")
+                pdf_path = convert_email_to_pdf(file_path, replace_original=True)  # Replace original with PDF
+                file_path = pdf_path  # Use the PDF file for further processing
+            except Exception as e:
+                logger.error(f"Failed to convert email to PDF: {str(e)}")
+                continue
         
         # Extract text from the document using appropriate method
         extracted_text = extract_text(file_path)
@@ -149,12 +160,76 @@ def format_llm_request(order_data):
             },
             {
                 "role": "user",
-                "content": f"Please analyze these workers compensation documents and extract the key information as specified in your instructions:\n\n{structured_content}"
+                "content": f"Please analyze these workers compensation documents and extract the key information as specified in your instructions, including all procedure line items:\n\n{structured_content}"
             }
         ]
     }
     
     return api_request
+
+def normalize_extracted_data(extracted_data):
+    """Normalize the extracted data to ensure a consistent structure."""
+    normalized = {
+        "patient_info": {},
+        "procedures": []
+    }
+    
+    # Define expected fields
+    patient_fields = [
+        "patient_name", "patient_address", "claim_number", "adjustor_info",
+        "employer_name", "employer_phone", "employer_address", "employer_email"
+    ]
+    procedure_fields = [
+        "service_description", "cpt_code", "icd10_code", "location_request",
+        "referring_provider", "additional_considerations"
+    ]
+    
+    # Check if the data is already in the expected format
+    if "patient_info" in extracted_data and "procedures" in extracted_data:
+        # Still normalize to ensure all fields are present
+        for field in patient_fields:
+            normalized["patient_info"][field] = extracted_data["patient_info"].get(field, {
+                "value": None, "source": "not found", "confidence": "not found"
+            })
+        
+        for procedure in extracted_data["procedures"]:
+            normalized_procedure = {}
+            for field in procedure_fields:
+                normalized_procedure[field] = procedure.get(field, {
+                    "value": None, "source": "not found", "confidence": "not found"
+                })
+            normalized["procedures"].append(normalized_procedure)
+    else:
+        # Flat structure - determine which fields belong to patient info vs. procedures
+        procedure = {}
+        for key, value in extracted_data.items():
+            if key in patient_fields:
+                normalized["patient_info"][key] = value
+            elif key in procedure_fields:
+                procedure[key] = value
+            # Handle special case for CPT_code vs cpt_code
+            elif key == "CPT_code" and "cpt_code" not in extracted_data:
+                procedure["cpt_code"] = value
+            elif key == "order_request" and "service_description" not in extracted_data:
+                procedure["service_description"] = value
+        
+        # Ensure all patient fields exist
+        for field in patient_fields:
+            if field not in normalized["patient_info"]:
+                normalized["patient_info"][field] = {
+                    "value": None, "source": "not found", "confidence": "not found"
+                }
+        
+        # Ensure all procedure fields exist and add to array
+        if procedure:
+            for field in procedure_fields:
+                if field not in procedure:
+                    procedure[field] = {
+                        "value": None, "source": "not found", "confidence": "not found"
+                    }
+            normalized["procedures"].append(procedure)
+    
+    return normalized
 
 def save_results(order_id, processed_data, api_request, llm_response):
     """
@@ -198,9 +273,17 @@ def save_results(order_id, processed_data, api_request, llm_response):
         else:
             # Try to parse the whole content as JSON
             extracted_data = json.loads(content)
+            
+        # Normalize the extracted data structure
+        extracted_data = normalize_extracted_data(extracted_data)
     except json.JSONDecodeError:
         logger.warning(f"Could not parse JSON from LLM response for order {order_id}")
-        extracted_data = {"error": "Could not parse JSON from response", "raw_content": content}
+        extracted_data = {
+            "patient_info": {},
+            "procedures": [],
+            "error": "Could not parse JSON from response", 
+            "raw_content": content
+        }
     
     # Prepare results
     results = {
